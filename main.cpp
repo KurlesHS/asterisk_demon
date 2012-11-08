@@ -6,8 +6,10 @@ using namespace std;
 
 #include <netlink/socket.h>
 #include <netlink/socket_group.h>
+#include <netlink/smart_buffer.h>
 #include "tinyxml/tinyxml.h"
 #include <regex.h>
+#include <map>
 enum notyfyStatys
 {
     notStartNotified,
@@ -17,13 +19,32 @@ enum notyfyStatys
     notificationConfirmed
 };
 
+enum serverState
+{
+    waitQuery,
+    waitAdditionalData
+};
+const int timeoutWaitData = 1; // в секундах
 const unsigned SERVER_PORT = 8080;
 char buffer[BUFFERMAXLENGHT];
+
 struct notyfied {
     notyfyStatys status;
     time_t statusChangedTime;
     string chanel;
     string filename;
+};
+
+struct socketConnectionInformation
+{
+    serverState currentCerverState;
+    NL::SmartBuffer buffer;
+    time_t changeStateTime;
+};
+
+struct serverInformation
+{
+    map<NL::Socket*, socketConnectionInformation*> sockets;
 };
 
 class OnAccept: public NL::SocketGroupCmd {
@@ -32,6 +53,15 @@ class OnAccept: public NL::SocketGroupCmd {
 
         NL::Socket* newConnection = socket->accept();
 
+        socketConnectionInformation *sci = new socketConnectionInformation;
+        sci->currentCerverState = waitQuery;
+        sci->changeStateTime = time(NULL);
+        sci->buffer.clear();
+        serverInformation *si = static_cast<serverInformation*>(reference);
+        if (si)
+        {
+            si->sockets[socket] = sci;
+        }
         group->add(newConnection);
         cout << "\nConnection " << newConnection->hostTo() << ":" << newConnection->portTo() << " added...";
         cout.flush();
@@ -42,20 +72,18 @@ class OnAccept: public NL::SocketGroupCmd {
 class OnRead: public NL::SocketGroupCmd {
 
     void exec(NL::Socket* socket, NL::SocketGroup* group, void* reference) {
-
         cout << "\nREAD -- ";
-        cout.flush();
-        char buffer[256];
-        buffer[255] = '\0';
-        socket->read(buffer, 255);
-        size_t msgLen = strlen(buffer);
-        cout << "Message from " << socket->hostTo() << ":" << socket->portTo() << ". Text received: " << buffer;
-        cout << endl << (int)reference << endl;
-        cout.flush();
+        serverInformation *si = static_cast<serverInformation*>(reference);
+        if (si)
+        {
+            if (si->sockets[socket]->currentCerverState == waitQuery)
+                si->sockets[socket]->buffer.clear();
+            si->sockets[socket]->currentCerverState = waitAdditionalData;
+            si->sockets[socket]->changeStateTime = time(NULL);
+            // читаем данные
+            si->sockets[socket]->buffer.read(socket);
+        }
 
-        for(unsigned i=1; i < (unsigned) group->size(); ++i)
-            if(group->get(i) != socket)
-                group->get(i)->send(buffer, msgLen + 1);
     }
 };
 
@@ -64,12 +92,22 @@ class OnDisconnect: public NL::SocketGroupCmd {
 
     void exec(NL::Socket* socket, NL::SocketGroup* group, void* reference) {
 
+        serverInformation *si = static_cast<serverInformation*>(reference);
+        if (si)
+        {
+           //удаляем данные по сокету
+            socketConnectionInformation *sci = si->sockets[socket];
+            si->sockets.erase(socket);
+            if (sci)
+                delete sci;
+        }
         group->remove(socket);
         cout << "\nClient " << socket->hostTo() << " disconnected...";
         cout.flush();
         delete socket;
     }
 };
+
 #define WORD unsigned short
 #define BYTE char
 
@@ -144,12 +182,32 @@ int main() {
     group.setCmdOnDisconnect(&onDisconnect);
 
     group.add(&socketServer);
-
+    serverInformation *si = new serverInformation;
     while(true) {
 
-        if(!group.listen(2000, (void*)1454))
-            cout << "\nNo msg recieved during the last 2 seconds";
-        cout << "count of clinets: " << group.size() << endl;
-        }
+        if(!group.listen(1000, static_cast<void*>(si)))
+        {
+            // проверяем, сколько сокетов находится в состоянии ожидании дополнительных данных
+            map<NL::Socket*, socketConnectionInformation*>::iterator it;
+            for ( it=si->sockets.begin() ; it != si->sockets.end(); it++ )
+            {
+                // first = key, second = value
+                socketConnectionInformation *sci = it->second;
+                cout << it->first << " => " << it->second << endl;
+                if (sci->currentCerverState == waitAdditionalData)
+                {
+                    if ((time(NULL) - sci->changeStateTime) > timeoutWaitData)
+                    {
+                        // здесь мы уже все таймауты выдержали, можно парсить ответ
+                        TiXmlDocument doc;
 
+                    }
+                }
+
+            }
+
+
+        }
+    }
+    delete si;
 }

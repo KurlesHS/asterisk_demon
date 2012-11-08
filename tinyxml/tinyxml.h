@@ -1425,6 +1425,7 @@ public:
 		file location. Streaming may be added in the future.
 	*/
 	bool LoadFile( FILE*, TiXmlEncoding encoding = TIXML_DEFAULT_ENCODING );
+    bool LoadFile( const char *data, int length, TiXmlEncoding encoding = TIXML_DEFAULT_ENCODING);
 	/// Save a file using the given FILE*. Returns true if successful.
 	bool SaveFile( FILE* ) const;
 
