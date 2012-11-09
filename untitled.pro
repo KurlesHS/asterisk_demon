@@ -2,6 +2,8 @@ TEMPLATE = app
 CONFIG += console
 CONFIG -= qt
 
+LIBS += -lrt
+
 DEPENDPATH += $$PWD/netLink/src
 INCLUDEPATH =+ $$PWD/netLink/include
 DEPENDPATH += $$PWD/tinyxml
@@ -12,14 +14,12 @@ SOURCES += main.cpp \
     netLink/src/socket.cc \
     netLink/src/smart_buffer.cc \
     netLink/src/core.cc \
-    tinyxml/tinyxmlparser.cpp \
-    tinyxml/tinyxmlerror.cpp \
-    tinyxml/tinyxml.cpp \
-    tinyxml/tinystr.cpp \
     regexp/WCPattern.cpp \
     regexp/WCMatcher.cpp \
     regexp/Pattern.cpp \
-    regexp/Matcher.cpp
+    regexp/Matcher.cpp \
+    md5.cpp \
+    tinyxml2/tinyxml2.cpp
 
 OTHER_FILES += \
     netLink/include/netlink/exception.code.inc
@@ -39,10 +39,11 @@ HEADERS += \
     netLink/include/netlink/exception.h \
     netLink/include/netlink/core.h \
     netLink/include/netlink/config.h \
-    tinyxml/tinyxml.h \
     tinyxml/tinystr.h \
     regexp/WCPattern.h \
     regexp/WCMatcher.h \
     regexp/Pattern.h \
-    regexp/Matcher.h
+    regexp/Matcher.h \
+    md5.h \
+    tinyxml2/tinyxml2.h
 
