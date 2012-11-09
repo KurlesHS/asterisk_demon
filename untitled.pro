@@ -18,8 +18,8 @@ SOURCES += main.cpp \
     regexp/WCMatcher.cpp \
     regexp/Pattern.cpp \
     regexp/Matcher.cpp \
-    md5.cpp \
-    tinyxml2/tinyxml2.cpp
+    tinyxml2/tinyxml2.cpp \
+    md5.c
 
 OTHER_FILES += \
     netLink/include/netlink/exception.code.inc
@@ -45,5 +45,6 @@ HEADERS += \
     regexp/Pattern.h \
     regexp/Matcher.h \
     md5.h \
-    tinyxml2/tinyxml2.h
+    tinyxml2/tinyxml2.h \
+    main.h
 
