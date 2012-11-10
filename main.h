@@ -2,13 +2,14 @@
 #define MAIN_H
 
 #include <map>
-#include <list>
+#include <vector>
 #include <string>
 #include <time.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <iostream>
+
 
 #include "netlink/socket.h"
 #include "netlink/socket_group.h"
@@ -19,7 +20,10 @@
 using namespace std;
 
 const int maxFilesInProcess = 10;
-const string asteriskWorkPath = "/home/alexey/asterisk_incoming/";
+const string asteriskIncomingPath = "/home/alexey/asterisk_incoming/";
+const string asteriskOutgoingPath = "/home/alexey/asterisk_outgoing/";
+const string asteriskLogPath = "/home/alexey/asterisk_log/";
+
 
 enum notyfyStatys
 {
@@ -54,14 +58,16 @@ struct socketConnectionInformation
 struct serverInformation
 {
     map<NL::Socket*, socketConnectionInformation*> sockets;
-    list<notyfied> abonentsToNotify;
+    vector<notyfied> abonentsToNotify;
     map< string, map<string, string> > callParametrs;
 };
 
+int main();
 void generateCallFiles();
+void toLoverCase(string &str);
 
 serverInformation *si;
-list<string> filesInProcess;
+vector<string> filesInProcess;
 
 
 #endif // MAIN_H

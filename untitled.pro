@@ -19,7 +19,8 @@ SOURCES += main.cpp \
     regexp/Pattern.cpp \
     regexp/Matcher.cpp \
     tinyxml2/tinyxml2.cpp \
-    md5.c
+    md5.c \
+    monitoractivity.cpp
 
 OTHER_FILES += \
     netLink/include/netlink/exception.code.inc
@@ -39,12 +40,12 @@ HEADERS += \
     netLink/include/netlink/exception.h \
     netLink/include/netlink/core.h \
     netLink/include/netlink/config.h \
-    tinyxml/tinystr.h \
     regexp/WCPattern.h \
     regexp/WCMatcher.h \
     regexp/Pattern.h \
     regexp/Matcher.h \
     md5.h \
     tinyxml2/tinyxml2.h \
-    main.h
+    main.h \
+    monitoractivity.h
 

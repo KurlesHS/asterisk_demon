@@ -1,5 +1,11 @@
+#include "regexp/Matcher.h"
+#include "regexp/Pattern.h"
 #include "main.h"
+#include <locale>
 #include <cstdio>
+#include <algorithm>
+#include <monitoractivity.h>
+#include <sys/stat.h>
 #define BUFFERMAXLENGHT 4064
 
 
@@ -29,13 +35,15 @@ class OnAccept: public NL::SocketGroupCmd {
         group->add(newConnection);
         cout << "\nConnection " << newConnection->hostTo() << ":" << newConnection->portTo() << " added...";
         cout.flush();
+
     }
 };
 
 
 class OnRead: public NL::SocketGroupCmd {
 
-    void exec(NL::Socket* socket, NL::SocketGroup* group, void* reference) {
+    void exec(NL::Socket* socket, NL::SocketGroup* , void* reference) {
+
         cout << "\nREAD -- ";
         serverInformation *si = static_cast<serverInformation*>(reference);
         if (si)
@@ -71,7 +79,73 @@ class OnDisconnect: public NL::SocketGroupCmd {
     }
 };
 
+void outgoingDirectoryActivity(string filename)
+{
+    cout << "файл " << filename.c_str() << " изменен!\n";
+
+    size_t pos = filename.find(".call");
+    if (pos == string::npos)
+    {
+        cout << "non *.call file\n";
+        return;
+    }
+    string filepath = asteriskOutgoingPath  + filename;
+    FILE *f = ::fopen(filepath.c_str(), "r");
+    if (f == NULL)
+        return;
+
+    // TODO: стоит избавиться от регекспа для такого простого случая?
+    Pattern * pat = Pattern::compile("\\bStatus:\\s*(\\w+)", Pattern::MULTILINE_MATCHING);
+    while (!feof(f))
+    {
+        if (fgets(buffer, BUFFERMAXLENGHT, f))
+        {
+
+            string str(buffer);
+            Matcher *mat = pat->createMatcher(str);
+            if (!mat)
+                continue;
+            mat->matches();
+            if (!mat->findFirstMatch())
+            {
+                delete mat;
+                continue;
+            }
+            generateCallFiles();
+            string status = mat->getGroup(1);
+            cout << "status: " << status << endl;
+
+            delete mat;
+            vector<notyfied>::iterator lit;
+            // ищем абонента
+            for (lit = si->abonentsToNotify.begin(); lit != si->abonentsToNotify.end(); ++lit)
+            {
+                // нашли
+                if (lit->filename == filename)
+                {
+                    lit->statusChangedTime = time(NULL);
+                    if (lit->status == notiyfyInProcess)
+                        lit->status = status == "completed" ? notifiedAbonent : notifiyIsFailed;
+                    break;
+                }
+
+            }
+            break;
+
+
+        }
+    }
+    delete pat;
+    fclose(f);
+
+}
+
 int main() {
+
+    string test = "HeLLo!";
+    cout << test;
+    toLoverCase(test);
+    cout <<" " << test << endl;
 
     timespec t1, t2;
     clockid_t clkId;
@@ -79,15 +153,6 @@ int main() {
     clock_gettime(clkId, &t1);
     time_t _time = time(NULL);
     tm *dateTime = localtime(&_time);
-
-    XMLDocument doc;
-    if (doc.LoadFile("/home/alexey/xml.xml") == XML_NO_ERROR)
-    {
-        cout << "XML is loaded\n";
-    } else
-        cout << "Error while loading XML\n";
-
-
 
 
     clock_gettime(clkId, &t2);
@@ -115,9 +180,17 @@ int main() {
 
     group.add(&socketServer);
     si = new serverInformation;
-    while(true) {
 
-        if(!group.listen(1000, static_cast<void*>(si)))
+    // настраиваем epool
+    monitorActivity epool;
+    if (!epool.isCreated())
+        return -1;
+
+    epool.addPathToMonitor(asteriskOutgoingPath, outgoingDirectoryActivity);
+
+    while(true) {
+        epool.processMointor();
+        if(!group.listen(200, static_cast<void*>(si)))
         {
             // проверяем, сколько сокетов находится в состоянии ожидании дополнительных данных
             map<NL::Socket*, socketConnectionInformation*>::iterator it;
@@ -135,7 +208,6 @@ int main() {
                         // здесь мы уже все таймауты выдержали, можно парсить ответ
                         XMLDocument doc;
                         bool parseSucces = false;
-                        //cout << static_cast<const char*>(sci->buffer.buffer());
                         cout << sci->buffer.size() << " buffer size\n";
                         if (doc.LoadFile(static_cast<const char*>(sci->buffer.buffer()), sci->buffer.size()) == XML_NO_ERROR)
                         {
@@ -148,7 +220,7 @@ int main() {
                             map<string, string> callCommands;
 
                             // список оповещаемых
-                            list<string> recepeterList;
+                            vector<string> recepeterList;
 
                             if (strcmp(element->Value(), "body") == 0)
                             {
@@ -196,7 +268,7 @@ int main() {
                             {
                                 char md5[33];
                                 si->callParametrs[id] = callCommands;
-                                list<string>::iterator it;
+                                vector<string>::iterator it;
                                 // запёхиваем оповещаемых во внутреннюю базу
                                 for (it = recepeterList.begin(); it != recepeterList.end(); ++it)
                                 {
@@ -235,19 +307,18 @@ int main() {
                         sci->buffer.clear();
                         char tmpdir[256];
                         memset(tmpdir, 0, 256);
-
-
                     }
                 }
             }
         }
+
     }
+
     delete si;
 }
 
 void generateCallFiles()
 {
-
     int numFile = maxFilesInProcess - filesInProcess.size();
     // проверка на максимальное
     if (numFile > 0)
@@ -257,9 +328,8 @@ void generateCallFiles()
         sprintf(buffer,"%ld",time(NULL));
         md5Compute(reinterpret_cast<unsigned char*>(buffer), strlen(buffer), md5);
         tmpDir.append("astdem.").append(md5 + 24);
-        list<notyfied>::iterator lit;
+        vector<notyfied>::iterator lit;
         bool dirIsCreated = false;
-        serverInformation *si2 = si;
         bool allRemoved = true;
         for (lit = si->abonentsToNotify.begin(); lit != si->abonentsToNotify.end(); ++lit)
         {
@@ -291,10 +361,9 @@ void generateCallFiles()
                      fputs (line.c_str(), pFile);
                  }
                  fclose (pFile);
-                 string newFilePath = asteriskWorkPath + lit->filename;
+                 string newFilePath = asteriskIncomingPath + lit->filename;
                  if (rename(filePath.c_str(), newFilePath.c_str()) != 0)
                      allRemoved = false;
-
             }
         }
         if (allRemoved)
@@ -306,4 +375,10 @@ void generateCallFiles()
             rmdir(tmpDir.c_str());
         }
     }
+}
+
+void toLoverCase(string &str)
+{
+    std::transform(str.begin(), str.end(), str.begin(),
+        std::bind2nd(std::ptr_fun(&std::tolower<char>), std::locale("")));
 }
