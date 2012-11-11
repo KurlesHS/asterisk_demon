@@ -65,6 +65,7 @@ struct serverInformation
 int main();
 void generateCallFiles();
 void toLoverCase(string &str);
+void sendResponse (NL::Socket *socket, const string &status, const string &id = "");
 
 serverInformation *si;
 vector<string> filesInProcess;

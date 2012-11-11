@@ -236,77 +236,148 @@ int main() {
                                     command.append(childElement->GetText());
                                 else
                                     parseSucces = false;
-                                element = element->FirstChildElement("Data");
-                                if (element)
-                                {
-                                    // вытаскиваем данные
 
-                                    // для начала список оповещаемых
-                                    childElement = element->FirstChildElement("RecipientList");
-                                    if (childElement)
+                                toLoverCase(command);
+                                if (parseSucces == false)
+                                {
+                                    sendResponse(socket, "Error");
+                                } else if (command == "generatefiles")
+                                {
+
                                     {
-                                        childElement = childElement->FirstChildElement("Recipient");
+                                        element = element->FirstChildElement("Data");
+                                        if (element)
+                                        {
+                                            // вытаскиваем данные
+
+                                            // для начала список оповещаемых
+                                            childElement = element->FirstChildElement("RecipientList");
+                                            if (childElement)
+                                            {
+                                                childElement = childElement->FirstChildElement("Recipient");
+                                                while (childElement)
+                                                {
+                                                    string r(childElement->GetText());
+                                                    recepeterList.push_back(r);
+                                                    childElement = childElement->NextSiblingElement();
+                                                }
+                                            }
+                                        }
+
+                                        childElement = element->FirstChildElement();
                                         while (childElement)
                                         {
-                                            string r(childElement->GetText());
-                                            recepeterList.push_back(r);
+                                            // пропускаем список оповещаемых и элементы без текста
+                                            if (childElement->GetText() && strcmp(childElement->Value(), "recepeterLists") != 0)
+                                                callCommands[childElement->Value()] = childElement->GetText();
                                             childElement = childElement->NextSiblingElement();
                                         }
                                     }
-                                }
+                                    if (recepeterList.size() > 0)
+                                    {
+                                        char md5[33];
+                                        si->callParametrs[id] = callCommands;
+                                        vector<string>::iterator it;
+                                        // запёхиваем оповещаемых во внутреннюю базу
+                                        for (it = recepeterList.begin(); it != recepeterList.end(); ++it)
+                                        {
+                                            //генерируем уникальное имя файла
+                                            string tmp = id + *it;
+                                            md5Compute(reinterpret_cast<const unsigned char*>(tmp.c_str()), tmp.size(), md5);
+                                            string hash = md5 + 16;
 
-                                childElement = element->FirstChildElement();
-                                while (childElement)
+                                            // экземпляр информации об абоненте
+                                            notyfied n;
+
+                                            // куда звонить
+                                            n.chanel = *it;
+                                            // имя файла
+                                            n.filename = hash + ".call";
+                                            // статус - не начато оповещение данного абонента
+                                            n.status = notStartNotified;
+                                            // текущее время
+                                            n.statusChangedTime = time(NULL);
+                                            // идентификатор запроса
+                                            n.idQuery = id;
+                                            si->abonentsToNotify.push_back(n);
+                                        }
+                                        generateCallFiles();
+                                        sendResponse(socket, "Ok", id.c_str());
+                                    } else
+                                    {
+                                        sendResponse(socket, "EmptyRecepeterList", id.c_str());
+                                    }
+                                } else if (command == "queryresults")
                                 {
-                                    // пропускаем список оповещаемых и элементы без текста
-                                    if (childElement->GetText() && strcmp(childElement->Value(), "recepeterLists") != 0)
-                                        callCommands[childElement->Value()] = childElement->GetText();
-                                    childElement = childElement->NextSiblingElement();
-                                }
-                            }
-                            if (recepeterList.size() > 0)
-                            {
-                                char md5[33];
-                                si->callParametrs[id] = callCommands;
-                                vector<string>::iterator it;
-                                // запёхиваем оповещаемых во внутреннюю базу
-                                for (it = recepeterList.begin(); it != recepeterList.end(); ++it)
+                                    XMLDocument outDoc;
+                                    XMLNode *body = outDoc.InsertFirstChild(outDoc.NewElement("body"));
+                                    XMLNode *idElement;
+                                    idElement = body->InsertFirstChild(outDoc.NewElement("Id"));
+                                    idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Data"));
+                                    idElement = idElement->InsertEndChild(outDoc.NewElement("RecipientList"));
+
+                                    vector<notyfied>::iterator it;
+                                    for (it = si->abonentsToNotify.begin(); it != si->abonentsToNotify.end();++it)
+                                    {
+                                        if (it->idQuery == id)
+                                        {
+                                            XMLElement *recipient = outDoc.NewElement("Recipient");
+                                            tm *dateTime = localtime(&it->statusChangedTime);
+                                            sprintf(buffer, "%02d.%02d.%02d %02d:%02d:%02d",
+                                                    dateTime->tm_mday,
+                                                    dateTime->tm_mon,
+                                                    dateTime->tm_year % 100,
+                                                    dateTime->tm_hour,
+                                                    dateTime->tm_min,
+                                                    dateTime->tm_sec
+                                                    );
+
+                                            recipient->SetAttribute("Time", buffer);
+                                            recipient->InsertEndChild(outDoc.NewText(it->chanel.c_str()));
+                                            string status;
+                                            switch (it->status)
+                                            {
+                                            case notStartNotified:
+                                                status = "notStartNotified";
+                                                break;
+                                            case notiyfyInProcess:
+                                                status = "notiyfyInProcess";
+                                                break;
+                                            case notifiyIsFailed:
+                                                status = "notifiyIsFailed";
+                                                break;
+                                            case notifiedAbonent:
+                                                status = "notifiedAbonent";
+                                                break;
+                                            case notificationConfirmed:
+                                                status = "notificationConfirmed";
+                                                break;
+                                            }
+                                            recipient->SetAttribute("Status", status.c_str());
+                                            idElement->InsertEndChild(recipient);
+
+
+                                        }
+                                    }
+                                    XMLPrinter printer;
+                                    outDoc.Print(&printer);
+                                    socket->send(printer.CStr(), printer.CStrSize() - 1);
+                                } else
                                 {
-                                    //генерируем уникальное имя файла
-                                    string tmp = id + *it;
-                                    md5Compute(reinterpret_cast<const unsigned char*>(tmp.c_str()), tmp.size(), md5);
-                                    string hash = md5 + 16;
-
-                                    // экземпляр информации об абоненте
-                                    notyfied n;
-
-                                    // куда звонить
-                                    n.chanel = *it;
-                                    // имя файла
-                                    n.filename = hash + ".call";
-                                    // статус - не начато оповещение данного абонента
-                                    n.status = notStartNotified;
-                                    // текущее время
-                                    n.statusChangedTime = time(NULL);
-                                    // идентификатор запроса
-                                    n.idQuery = id;
-                                    si->abonentsToNotify.push_back(n);
+                                    sendResponse(socket, "UnknowCommand", id.c_str());
                                 }
-                                generateCallFiles();
+
                             }
 
-
-                            // послали ответ, что всё хорошо, и мы поехали работать
-                            socket->send("susces", 7);
                         } else
                         {
-                            socket->send("error", 6);
+                            sendResponse(socket, "Error");
                         }
                         sci->changeStateTime = time(NULL);
                         sci->currentCerverState = waitQuery;
                         sci->buffer.clear();
-                        char tmpdir[256];
-                        memset(tmpdir, 0, 256);
+
                     }
                 }
             }
@@ -315,6 +386,23 @@ int main() {
     }
 
     delete si;
+}
+
+void sendResponse (NL::Socket *socket, const string &status, const string &id)
+{
+    XMLDocument outDoc;
+    XMLNode *body = outDoc.InsertFirstChild(outDoc.NewElement("body"));
+    XMLNode *idElement;
+    if (!id.empty())
+    {
+        idElement = body->InsertFirstChild(outDoc.NewElement("Id"));
+        idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
+    }
+    idElement = body->InsertEndChild(outDoc.NewElement("Status"));
+    idElement->InsertFirstChild(outDoc.NewText(status.c_str()));
+    XMLPrinter printer;
+    outDoc.Print(&printer);
+    socket->send(printer.CStr(), printer.CStrSize() - 1);
 }
 
 void generateCallFiles()
@@ -345,29 +433,30 @@ void generateCallFiles()
                 }
                 string filePath = tmpDir + "/" + lit->filename;
                 FILE * pFile;
-                 pFile = fopen (filePath.c_str(),"w");
+                pFile = fopen (filePath.c_str(),"w");
 
-                 // something wrong
-                 if (pFile == NULL)
-                     continue;
-                 --numFile;
-                 string line = "Channel: " + lit->chanel + "\n";
-                 fputs (line.c_str(), pFile);
-                 // параметры звонка
-                 map<string, string>::iterator it;
-                 for (it = si->callParametrs[lit->idQuery].begin(); it != si->callParametrs[lit->idQuery].end(); ++it)
-                 {
-                     string line = it->first + ": " + it->second + "\n";
-                     fputs (line.c_str(), pFile);
-                 }
-                 fclose (pFile);
-                 string newFilePath = asteriskIncomingPath + lit->filename;
-                 if (rename(filePath.c_str(), newFilePath.c_str()) != 0)
-                     allRemoved = false;
+                // something wrong
+                if (pFile == NULL)
+                    continue;
+                --numFile;
+                string line = "Channel: " + lit->chanel + "\n";
+                fputs (line.c_str(), pFile);
+                // параметры звонка
+                map<string, string>::iterator it;
+                for (it = si->callParametrs[lit->idQuery].begin(); it != si->callParametrs[lit->idQuery].end(); ++it)
+                {
+                    string line = it->first + ": " + it->second + "\n";
+                    fputs (line.c_str(), pFile);
+                }
+                fclose (pFile);
+                string newFilePath = asteriskIncomingPath + lit->filename;
+                if (rename(filePath.c_str(), newFilePath.c_str()) != 0)
+                    allRemoved = false;
+                lit->status = notiyfyInProcess;
             }
         }
         if (allRemoved)
-           rmdir(tmpDir.c_str());
+            rmdir(tmpDir.c_str());
         else
         {
             // мб в ручную удалить файлы?
@@ -380,5 +469,5 @@ void generateCallFiles()
 void toLoverCase(string &str)
 {
     std::transform(str.begin(), str.end(), str.begin(),
-        std::bind2nd(std::ptr_fun(&std::tolower<char>), std::locale("")));
+                   std::bind2nd(std::ptr_fun(&std::tolower<char>), std::locale("")));
 }
