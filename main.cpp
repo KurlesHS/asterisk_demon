@@ -79,12 +79,65 @@ class OnDisconnect: public NL::SocketGroupCmd {
     }
 };
 
+void logDirectoryActivity(string filename)
+{
+    static long currentPos = 0;
+    cout << "файл в log directory " << filename.c_str() << " изменен!\n";
+    if (filename != "messages")
+        return;
+    string filepath = asteriskLogPath + filename;
+    FILE *f = ::fopen(filepath.c_str(), "r");
+    if (f == NULL)
+        return;
+    Pattern * pat = Pattern::compile("^\\[(\\w{3}) (\\d+) (\\d+):(\\d+):(\\d+)\\]\\s+NOTICE\\[\\d+\\].+\\'(.+)\\'\\s+is now\\s(\\w+)");
+    while (!feof(f))
+    {
+        if (fgets(buffer, BUFFERMAXLENGHT, f))
+        {
+            string str(buffer);
+            Matcher *mat = pat->createMatcher(str);
+            if (!mat)
+                continue;
+            mat->matches();
+            while (mat->findNextMatch())
+            {
+                string month = mat->getGroup(1);
+                string day = mat->getGroup(2);
+                string hour = mat->getGroup(3);
+                string minute = mat->getGroup(4);
+                string seconds = mat->getGroup(5);
+                string chanel = mat->getGroup(6);
+                string status = mat->getGroup(7);
+                toLoverCase(status);
+
+                if (status == "lagged")
+                {
+
+                } else if (status == "reachable")
+                {
+
+                } else if (status == "unreachable")
+                {
+
+                } else
+                {
+
+                }
+            }
+            delete mat;
+            continue;
+
+
+        }
+    }
+}
+
 void outgoingDirectoryActivity(string filename)
 {
-    cout << "файл " << filename.c_str() << " изменен!\n";
+    cout << "файл outgoing_done " << filename.c_str() << " изменен!\n";
 
     size_t pos = filename.find(".call");
-    if (pos == string::npos)
+    if (pos == string::npos || filename.length() - pos != 5)
     {
         cout << "non *.call file\n";
         return;
@@ -128,20 +181,16 @@ void outgoingDirectoryActivity(string filename)
                         lit->status = status == "completed" ? notifiedAbonent : notifiyIsFailed;
                     break;
                 }
-
             }
             break;
-
-
         }
     }
     delete pat;
     fclose(f);
-
 }
 
-int main() {
-
+int main(int argc, char** argv)
+{
     string test = "HeLLo!";
     cout << test;
     toLoverCase(test);
@@ -159,6 +208,72 @@ int main() {
     time_t _time2 = time(NULL);
     cout << "time in nanosec: " << t1.tv_nsec << " : " << t2.tv_nsec << " : " << (t2.tv_nsec + (_time2 - _time) * 1000000000) - t1.tv_nsec << " " << t1.tv_sec <<endl;
     cout << dateTime->tm_hour<<":"<<dateTime->tm_min<<":"<<dateTime->tm_sec<<endl;
+
+    int status;
+    int pid;
+
+    // если параметров командной строки меньше двух, то покажем как использовать демона
+    if (argc == 2)
+    {
+        if (strcmp(argv[1], "-d") == 0)
+            cout << "Debug session\n";
+        return monitorProc();
+    }
+
+    // загружаем файл конфигурации
+    /*
+    status = LoadConfig(argv[1]);
+
+    if (!status) // если произошла ошибка загрузки конфига
+    {
+        printf("Error: Load config failed\n");
+        return -1;
+    }
+    */
+    // создаем потомка
+    pid = fork();
+
+    if (pid == -1) // если не удалось запустить потомка
+    {
+        // выведем на экран ошибку и её описание
+        printf("Error: Start Daemon failed (%s)\n", strerror(errno));
+
+        return -1;
+    }
+    else if (!pid) // если это потомок
+    {
+        // данный код уже выполняется в процессе потомка
+        // разрешаем выставлять все биты прав на создаваемые файлы,
+        // иначе у нас могут быть проблемы с правами доступа
+        umask(0);
+
+        // создаём новый сеанс, чтобы не зависеть от родителя
+        setsid();
+
+        // переходим в корень диска, если мы этого не сделаем, то могут быть проблемы.
+        // к примеру с размантированием дисков
+        chdir("/");
+
+        // закрываем дискрипторы ввода/вывода/ошибок, так как нам они больше не понадобятся
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+
+        // Данная функция будет осуществлять слежение за процессом
+        status = monitorProc();
+
+        return status;
+    }
+    else // если это родитель
+    {
+        // завершим процес, т.к. основную свою задачу (запуск демона) мы выполнили
+        return 0;
+    }
+}
+
+
+int monitorProc() {
+
 
     NL::init();
     memset(buffer, 0, BUFFERMAXLENGHT * sizeof(char));
@@ -356,8 +471,6 @@ int main() {
                                             }
                                             recipient->SetAttribute("Status", status.c_str());
                                             idElement->InsertEndChild(recipient);
-
-
                                         }
                                     }
                                     XMLPrinter printer;
@@ -382,7 +495,6 @@ int main() {
                 }
             }
         }
-
     }
 
     delete si;

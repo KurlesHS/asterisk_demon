@@ -61,11 +61,12 @@ struct serverInformation
     vector<notyfied> abonentsToNotify;
     map< string, map<string, string> > callParametrs;
 };
-
-int main();
+int monitorProc();
 void generateCallFiles();
 void toLoverCase(string &str);
 void sendResponse (NL::Socket *socket, const string &status, const string &id = "");
+void logDirectoryActivity(string filename);
+void outgoingDirectoryActivity(string filename);
 
 serverInformation *si;
 vector<string> filesInProcess;
