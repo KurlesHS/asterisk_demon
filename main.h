@@ -83,6 +83,7 @@ void sendResponse (NL::Socket *socket, const string &status, const string &id = 
 void logDirectoryActivity(string filename);
 void outgoingDoneDirectoryActivity(string filename);
 bool chkPath(string &path, const int &type);
+void parseLogFile(FILE *f);
 
 serverInformation *si;
 vector<string> filesInProcess;

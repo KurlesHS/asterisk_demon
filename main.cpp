@@ -93,25 +93,10 @@ bool chkPath(string &path, const int &type)
     return true;
 }
 
-
-void logDirectoryActivity(string filename)
+void parseLogFile(FILE *f)
 {
     static const string months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    static long int currentPos = 0;
-    cout << "файл в log directory " << filename.c_str() << " изменен!\n";
-    if (filename != "messages")
-        return;
-    string filepath = asteriskLogPath + filename;
-    FILE *f = ::fopen(filepath.c_str(), "r");
-    if (f == NULL)
-        return;
-    if (fseek (f, currentPos, SEEK_SET) != 0)
-    {
-        currentPos = 0;
-        fseek(f, currentPos, SEEK_SET);
-    }
     Pattern * pat = Pattern::compile("^\\[(\\w{3})\\s+(\\d+)\\s+(\\d+):(\\d+):(\\d+)\\]\\s+NOTICE\\[\\d+\\].+\\'(.+)\\'\\s+is\\s+now\\s+(\\w+)");
-    int numl = 0;
     bool firstLine = true;
     while (!feof(f))
     {
@@ -122,7 +107,6 @@ void logDirectoryActivity(string filename)
             Matcher *mat = pat->createMatcher(str);
             if (!mat)
                 continue;
-            ++numl;
 
             mat->matches();
             while (mat->findNextMatch())
@@ -169,7 +153,6 @@ void logDirectoryActivity(string filename)
                 ci.state = state;
                 chanelInfos[chanel] = ci;
 
-                cout << chanel << ": " << status << " " << ci.state << endl;
             }
             delete mat;
             continue;
@@ -181,7 +164,72 @@ void logDirectoryActivity(string filename)
         }
     }
     delete pat;
-    cout << "num lines readed: " << numl << endl;
+
+}
+
+
+void logDirectoryActivity(string filename)
+{
+    static bool firstRun = true;
+    static long int currentPos = 0;
+    cout << "файл в log directory " << filename.c_str() << " изменен!\n";
+    // при первом запуске пытаемся прочитать и messages.230112312 файл
+    if (firstRun)
+    {
+        firstRun = false;
+        DIR *dir = opendir(asteriskLogPath.c_str());
+        if(dir)
+        {
+            struct dirent *ent;
+            while((ent = readdir(dir)) != NULL)
+            {
+                char *foundAt = strstr(ent->d_name, "messages.");
+                if (foundAt)
+                {
+                    // что то нашли
+                    foundAt += 9;
+                    bool found = true;
+                    while (*foundAt != 0)
+                    {
+                        if (*foundAt >= '0' || *foundAt <= '9')
+                        {
+                            ++foundAt;
+                            continue;
+                        }
+                        foundAt = false;
+                        break;
+                    }
+                    if (!found)
+                        continue;
+                    // совпал шаблончик
+                    // пробуем открыть
+                    string filepath = asteriskLogPath + ent->d_name;
+                    FILE *f = fopen(filepath.c_str(), "r");
+                    // не получилось -возможно это директория, переходим к сл. элементу каталога
+                    if (!f)
+                        continue;
+                    parseLogFile(f);
+                    fclose(f);
+                }
+            }
+            closedir(dir);
+        }
+    }
+
+
+    if (filename != "messages")
+        return;
+
+    string filepath = asteriskLogPath + filename;
+    FILE *f = ::fopen(filepath.c_str(), "r");
+    if (f == NULL)
+        return;
+    if (fseek (f, currentPos, SEEK_SET) != 0)
+    {
+        currentPos = 0;
+        fseek(f, currentPos, SEEK_SET);
+    }
+    parseLogFile(f);
     currentPos = ftell(f);
     fclose(f);
 }
@@ -245,6 +293,7 @@ void outgoingDoneDirectoryActivity(string filename)
 
 int main(int argc, char** argv)
 {
+
     //FILE *f = ::fopen("/home/alexey/asterisk_log/test.txt", "r");
 
     /*
@@ -300,6 +349,8 @@ int main(int argc, char** argv)
         return -1;
     if (!chkPath(asterislTempPath, R_OK | W_OK))
         return -1;
+
+
 
     // ключик для дебага
     {
