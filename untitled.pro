@@ -3,7 +3,21 @@ CONFIG += console
 CONFIG -= qt
 
 LIBS += -lrt
+RCC_DIR = ./build/rcc
+UI_DIR = ./build/ui
+MOC_DIR = ./build/moc
+DESTDIR = ./app
 
+win32:CONFIG += qaxcontainer
+
+CONFIG(debug, debug|release):{
+DEFINES+=DEBUG
+OBJECTS_DIR = ./build/debug/obj
+} else: {
+OBJECTS_DIR = ./build/release/obj
+}
+
+CONFIG(debug, debug|release):DEFINES += DEBUG
 DEPENDPATH += $$PWD/netLink/src
 INCLUDEPATH =+ $$PWD/netLink/include
 DEPENDPATH += $$PWD/tinyxml

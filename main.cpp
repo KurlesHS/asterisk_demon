@@ -3,9 +3,11 @@
 #include "main.h"
 #include <locale>
 #include <cstdio>
+#include <stdio.h>
 #include <algorithm>
 #include <monitoractivity.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #define BUFFERMAXLENGHT 4064
 
 
@@ -14,13 +16,12 @@ using namespace tinyxml2;
 string sd;
 
 const int timeoutWaitData = 1; // в секундах
-const unsigned SERVER_PORT = 8080;
+unsigned SERVER_PORT = 3465;
 char buffer[BUFFERMAXLENGHT];
 
 class OnAccept: public NL::SocketGroupCmd {
 
     void exec(NL::Socket* socket, NL::SocketGroup* group, void* reference) {
-
         NL::Socket* newConnection = socket->accept();
         cout << "Socket on connect: " << newConnection << endl;
         socketConnectionInformation *sci = new socketConnectionInformation;
@@ -79,9 +80,24 @@ class OnDisconnect: public NL::SocketGroupCmd {
     }
 };
 
+bool chkPath(string &path, const int &type)
+{
+    int res = access(path.c_str(), type);
+    if (res != 0)
+    {
+        cout << "not have access to the directory \"" << path.c_str()<< "\"\n";
+        return 0;
+    }
+    if (path.at(path.length() - 1) != '/')
+        path.append("/");
+    return true;
+}
+
+
 void logDirectoryActivity(string filename)
 {
-    static long currentPos = 0;
+    static const string months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    static long int currentPos = 0;
     cout << "файл в log directory " << filename.c_str() << " изменен!\n";
     if (filename != "messages")
         return;
@@ -89,18 +105,29 @@ void logDirectoryActivity(string filename)
     FILE *f = ::fopen(filepath.c_str(), "r");
     if (f == NULL)
         return;
-    Pattern * pat = Pattern::compile("^\\[(\\w{3}) (\\d+) (\\d+):(\\d+):(\\d+)\\]\\s+NOTICE\\[\\d+\\].+\\'(.+)\\'\\s+is now\\s(\\w+)");
+    if (fseek (f, currentPos, SEEK_SET) != 0)
+    {
+        currentPos = 0;
+        fseek(f, currentPos, SEEK_SET);
+    }
+    Pattern * pat = Pattern::compile("^\\[(\\w{3})\\s+(\\d+)\\s+(\\d+):(\\d+):(\\d+)\\]\\s+NOTICE\\[\\d+\\].+\\'(.+)\\'\\s+is\\s+now\\s+(\\w+)");
+    int numl = 0;
+    bool firstLine = true;
     while (!feof(f))
     {
         if (fgets(buffer, BUFFERMAXLENGHT, f))
         {
+            firstLine = false;
             string str(buffer);
             Matcher *mat = pat->createMatcher(str);
             if (!mat)
                 continue;
+            ++numl;
+
             mat->matches();
             while (mat->findNextMatch())
             {
+                chanelInfo ci;
                 string month = mat->getGroup(1);
                 string day = mat->getGroup(2);
                 string hour = mat->getGroup(3);
@@ -108,31 +135,58 @@ void logDirectoryActivity(string filename)
                 string seconds = mat->getGroup(5);
                 string chanel = mat->getGroup(6);
                 string status = mat->getGroup(7);
-                toLoverCase(status);
+                time_t t= time(NULL);
 
-                if (status == "lagged")
+                tm *currentDateTime = localtime(&t);
+                currentDateTime->tm_hour = atoi(hour.c_str());
+                currentDateTime->tm_min = atoi(minute.c_str());
+                currentDateTime->tm_sec = atoi(seconds.c_str());
+                currentDateTime->tm_mday = atoi(day.c_str());
+                currentDateTime->tm_wday = 0;
+                currentDateTime->tm_yday = 0;
+                currentDateTime->tm_mon = 1;
+
+                for (int i = 0; i < 12; ++i)
                 {
-
-                } else if (status == "reachable")
-                {
-
-                } else if (status == "unreachable")
-                {
-
-                } else
-                {
-
+                    if (months[i] == month)
+                    {
+                        currentDateTime->tm_mon = i + 1;
+                        break;
+                    }
                 }
+                mktime(currentDateTime);
+                toLoverCase(status);
+                chanelState state;
+                if (status == "lagged")
+                    state = chanelLaggedState;
+                else if (status == "reachable")
+                    state = chanelReachableState;
+                else if (status == "unreachable")
+                    state = chanelUnreachableState;
+                else
+                    state = chanelUnknowState;
+                memcpy(&ci.time, currentDateTime, sizeof(tm));
+                ci.state = state;
+                chanelInfos[chanel] = ci;
+
+                cout << chanel << ": " << status << " " << ci.state << endl;
             }
             delete mat;
             continue;
-
-
+        } else
+        {
+            if (firstLine)
+                fseek(f, 0, SEEK_SET);
+            firstLine = false;
         }
     }
+    delete pat;
+    cout << "num lines readed: " << numl << endl;
+    currentPos = ftell(f);
+    fclose(f);
 }
 
-void outgoingDirectoryActivity(string filename)
+void outgoingDoneDirectoryActivity(string filename)
 {
     cout << "файл outgoing_done " << filename.c_str() << " изменен!\n";
 
@@ -142,7 +196,7 @@ void outgoingDirectoryActivity(string filename)
         cout << "non *.call file\n";
         return;
     }
-    string filepath = asteriskOutgoingPath  + filename;
+    string filepath = asteriskOutgoingDonePath  + filename;
     FILE *f = ::fopen(filepath.c_str(), "r");
     if (f == NULL)
         return;
@@ -191,6 +245,9 @@ void outgoingDirectoryActivity(string filename)
 
 int main(int argc, char** argv)
 {
+    //FILE *f = ::fopen("/home/alexey/asterisk_log/test.txt", "r");
+
+    /*
     string test = "HeLLo!";
     cout << test;
     toLoverCase(test);
@@ -208,17 +265,52 @@ int main(int argc, char** argv)
     time_t _time2 = time(NULL);
     cout << "time in nanosec: " << t1.tv_nsec << " : " << t2.tv_nsec << " : " << (t2.tv_nsec + (_time2 - _time) * 1000000000) - t1.tv_nsec << " " << t1.tv_sec <<endl;
     cout << dateTime->tm_hour<<":"<<dateTime->tm_min<<":"<<dateTime->tm_sec<<endl;
-
+*/
     int status;
     int pid;
 
     // если параметров командной строки меньше двух, то покажем как использовать демона
-    if (argc == 2)
+    if (argc < 6)
     {
-        if (strcmp(argv[1], "-d") == 0)
+        cout << "usage: asterisk_demon /path/to/tmp /path/to/outgoing path/to/outgoing_done /path/to/log portNumber\n";
+        return 0;
+    }
+
+    // берём пути для работы
+    asterislTempPath = argv[1];
+    asteriskOutgoingPath = argv[2];
+    asteriskOutgoingDonePath = argv[3];
+    asteriskLogPath = argv[4];
+    int c = atoi(argv[5]);
+    if (c <= 0 || c > 65535)
+    {
+        // порт за пределами допустимых значений
+        cout << "not valid port value\n";
+        return -1;
+    }
+    SERVER_PORT = c;
+
+
+    // проверяем их на доступность
+    if (!chkPath(asteriskLogPath, R_OK))
+        return -1;
+    if (!chkPath(asteriskOutgoingPath, R_OK | W_OK))
+        return -1;
+    if (!chkPath(asteriskOutgoingDonePath, R_OK))
+        return -1;
+    if (!chkPath(asterislTempPath, R_OK | W_OK))
+        return -1;
+
+    // ключик для дебага
+    {
+        // если присутствует, то запускаем как обычную программу
+        if (strcmp(argv[6], "-d") == 0)
             cout << "Debug session\n";
         return monitorProc();
     }
+    // здесь - если не дебаг. Запускаем как демона
+
+
 
     // загружаем файл конфигурации
     /*
@@ -269,6 +361,8 @@ int main(int argc, char** argv)
         // завершим процес, т.к. основную свою задачу (запуск демона) мы выполнили
         return 0;
     }
+    return 0;
+
 }
 
 
@@ -301,7 +395,9 @@ int monitorProc() {
     if (!epool.isCreated())
         return -1;
 
-    epool.addPathToMonitor(asteriskOutgoingPath, outgoingDirectoryActivity);
+    epool.addPathToMonitor(asteriskOutgoingDonePath, outgoingDoneDirectoryActivity);
+    epool.addPathToMonitor(asteriskLogPath, logDirectoryActivity);
+    logDirectoryActivity("messages");
 
     while(true) {
         epool.processMointor();
@@ -429,6 +525,8 @@ int monitorProc() {
                                     XMLNode *idElement;
                                     idElement = body->InsertFirstChild(outDoc.NewElement("Id"));
                                     idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Status"));
+                                    idElement->InsertFirstChild(outDoc.NewText("Ok"));
                                     idElement = body->InsertEndChild(outDoc.NewElement("Data"));
                                     idElement = idElement->InsertEndChild(outDoc.NewElement("RecipientList"));
 
@@ -476,6 +574,125 @@ int monitorProc() {
                                     XMLPrinter printer;
                                     outDoc.Print(&printer);
                                     socket->send(printer.CStr(), printer.CStrSize() - 1);
+                                } else if (command == "querychanelsstate")
+                                {
+                                    XMLDocument outDoc;
+                                    XMLNode *body = outDoc.InsertFirstChild(outDoc.NewElement("body"));
+                                    XMLNode *idElement;
+                                    idElement = body->InsertFirstChild(outDoc.NewElement("Id"));
+                                    idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Status"));
+                                    idElement->InsertFirstChild(outDoc.NewText("Ok"));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Data"));
+                                    idElement = idElement->InsertEndChild(outDoc.NewElement("RecipientList"));
+                                    element = element->FirstChildElement("Data");
+                                    if (element)
+                                    {
+                                        // вытаскиваем данные
+
+                                        // для начала список оповещаемых
+                                        childElement = element->FirstChildElement("RecipientList");
+                                        if (childElement)
+                                        {
+                                            childElement = childElement->FirstChildElement("Recipient");
+                                            while (childElement)
+                                            {
+                                                string r(childElement->GetText());
+                                                childElement = childElement->NextSiblingElement();
+                                                string status;
+                                                tm _tm;
+                                                map<string, chanelInfo>::iterator it = chanelInfos.find(r);
+                                                XMLElement *recipient = outDoc.NewElement("Recipient");
+                                                if (it != chanelInfos.end())
+                                                {
+                                                    memcpy(&_tm, &it->second.time, sizeof(tm));
+                                                    switch(it->second.state)
+                                                    {
+                                                    case chanelUnknowState:
+                                                        status = "chanelUnknowState";
+                                                        break;
+                                                    case chanelLaggedState:
+                                                        status = "chanelLaggedState";
+                                                        break;
+                                                    case chanelReachableState:
+                                                        status = "chanelReachableState";
+                                                        break;
+                                                    case chanelUnreachableState:
+                                                        status = "chanelUnreachableState";
+                                                        break;
+                                                    }
+                                                } else
+                                                {
+                                                    status = "chanelUnknowState";
+                                                    time_t p_time = time(NULL);
+                                                    tm *p_tm = localtime(&p_time);
+                                                    memcpy(&_tm, p_tm, sizeof(tm));
+                                                }
+                                                sprintf(buffer, "%02d.%02d.%02d %02d:%02d:%02d",
+                                                        _tm.tm_mday,
+                                                        _tm.tm_mon,
+                                                        _tm.tm_year % 100,
+                                                        _tm.tm_hour,
+                                                        _tm.tm_min,
+                                                        _tm.tm_sec
+                                                        );
+                                                recipient->SetAttribute("Time", buffer);
+                                                recipient->SetAttribute("Status", status.c_str());
+                                                idElement->InsertEndChild(recipient);
+
+                                                recipient->InsertEndChild(outDoc.NewText(r.c_str()));
+
+                                            }
+                                            XMLPrinter printer;
+                                            outDoc.Print(&printer);
+                                            socket->send(printer.CStr(), printer.CStrSize() - 1);
+                                        } else
+                                            sendResponse(socket, "Error", id.c_str());
+                                    } else
+                                    {
+                                        // все каналы отображать
+                                        childElement = childElement->NextSiblingElement();
+                                        string status;
+                                        map<string, chanelInfo>::iterator it;
+                                        for (it = chanelInfos.begin(); it != chanelInfos.end(); ++it)
+                                        {
+                                            cout << it->first.c_str() << ": " << (int)it->second.state << endl;
+                                            XMLElement *recipient = outDoc.NewElement("Recipient");
+                                            switch(it->second.state)
+                                            {
+                                            case chanelUnknowState:
+                                                status = "chanelUnknowState";
+                                                break;
+                                            case chanelLaggedState:
+                                                status = "chanelLaggedState";
+                                                break;
+                                            case chanelReachableState:
+                                                status = "chanelReachableState";
+                                                break;
+                                            case chanelUnreachableState:
+                                                status = "chanelUnreachableState";
+                                                break;
+                                            }
+                                            sprintf(buffer, "%02d.%02d.%02d %02d:%02d:%02d",
+                                                    it->second.time.tm_mday,
+                                                    it->second.time.tm_mon,
+                                                    it->second.time.tm_year % 100,
+                                                    it->second.time.tm_hour,
+                                                    it->second.time.tm_min,
+                                                    it->second.time.tm_sec
+                                                    );
+                                            recipient->SetAttribute("Time", buffer);
+                                            recipient->SetAttribute("Status", status.c_str());
+                                            idElement->InsertEndChild(recipient);
+                                            recipient->InsertEndChild(outDoc.NewText(it->first.c_str()));
+                                        }
+                                        XMLPrinter printer;
+                                        outDoc.Print(&printer);
+                                        socket->send(printer.CStr(), printer.CStrSize() - 1);
+
+                                    }
+
+
                                 } else
                                 {
                                     sendResponse(socket, "UnknowCommand", id.c_str());
@@ -524,7 +741,7 @@ void generateCallFiles()
     if (numFile > 0)
     {
         char md5[33];
-        string tmpDir = "/tmp/";
+        string tmpDir = asterislTempPath;
         sprintf(buffer,"%ld",time(NULL));
         md5Compute(reinterpret_cast<unsigned char*>(buffer), strlen(buffer), md5);
         tmpDir.append("astdem.").append(md5 + 24);
@@ -561,7 +778,7 @@ void generateCallFiles()
                     fputs (line.c_str(), pFile);
                 }
                 fclose (pFile);
-                string newFilePath = asteriskIncomingPath + lit->filename;
+                string newFilePath = asteriskOutgoingPath + lit->filename;
                 if (rename(filePath.c_str(), newFilePath.c_str()) != 0)
                     allRemoved = false;
                 lit->status = notiyfyInProcess;

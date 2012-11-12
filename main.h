@@ -20,10 +20,10 @@
 using namespace std;
 
 const int maxFilesInProcess = 10;
-const string asteriskIncomingPath = "/home/alexey/asterisk_incoming/";
-const string asteriskOutgoingPath = "/home/alexey/asterisk_outgoing/";
-const string asteriskLogPath = "/home/alexey/asterisk_log/";
-
+string asteriskOutgoingPath;
+string asteriskOutgoingDonePath;
+string asteriskLogPath;
+string asterislTempPath;
 
 enum notyfyStatys
 {
@@ -32,6 +32,20 @@ enum notyfyStatys
     notifiyIsFailed,
     notifiedAbonent,
     notificationConfirmed
+};
+
+enum chanelState
+{
+    chanelUnknowState,
+    chanelLaggedState,
+    chanelReachableState,
+    chanelUnreachableState
+};
+
+struct chanelInfo
+{
+    chanelState state;
+    tm time;
 };
 
 enum serverState
@@ -61,15 +75,19 @@ struct serverInformation
     vector<notyfied> abonentsToNotify;
     map< string, map<string, string> > callParametrs;
 };
+int main(int argc, char** argv);
 int monitorProc();
 void generateCallFiles();
 void toLoverCase(string &str);
 void sendResponse (NL::Socket *socket, const string &status, const string &id = "");
 void logDirectoryActivity(string filename);
-void outgoingDirectoryActivity(string filename);
+void outgoingDoneDirectoryActivity(string filename);
+bool chkPath(string &path, const int &type);
 
 serverInformation *si;
 vector<string> filesInProcess;
+map<string, chanelInfo> chanelInfos;
+
 
 
 #endif // MAIN_H
