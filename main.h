@@ -20,10 +20,10 @@
 using namespace std;
 
 const int maxFilesInProcess = 10;
-string asteriskOutgoingPath;
-string asteriskOutgoingDonePath;
-string asteriskLogPath;
-string asterislTempPath;
+static string asteriskOutgoingPath;
+static string asteriskOutgoingDonePath;
+static string asteriskLogPath;
+static string asterislTempPath;
 
 enum notyfyStatys
 {
@@ -79,7 +79,7 @@ int main(int argc, char** argv);
 int monitorProc();
 void generateCallFiles();
 void toLoverCase(string &str);
-void sendResponse (NL::Socket *socket, const string &status, const string &id = "");
+void sendResponse (NL::Socket *socket, const string &status, const string &id = "", const string &command="");
 void logDirectoryActivity(string filename);
 void outgoingDoneDirectoryActivity(string filename);
 bool chkPath(string &path, const int &type);

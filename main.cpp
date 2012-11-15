@@ -16,7 +16,7 @@ using namespace tinyxml2;
 string sd;
 
 const int timeoutWaitData = 1; // в секундах
-unsigned SERVER_PORT = 3465;
+unsigned SERVER_PORT;
 char buffer[BUFFERMAXLENGHT];
 
 class OnAccept: public NL::SocketGroupCmd {
@@ -36,7 +36,6 @@ class OnAccept: public NL::SocketGroupCmd {
         group->add(newConnection);
         cout << "\nConnection " << newConnection->hostTo() << ":" << newConnection->portTo() << " added...";
         cout.flush();
-
     }
 };
 
@@ -97,6 +96,7 @@ void parseLogFile(FILE *f)
 {
     static const string months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     Pattern * pat = Pattern::compile("^\\[(\\w{3})\\s+(\\d+)\\s+(\\d+):(\\d+):(\\d+)\\]\\s+NOTICE\\[\\d+\\].+\\'(.+)\\'\\s+is\\s+now\\s+(\\w+)");
+    // new pattern : ^\[(\w{3})\s+(\d+)\s+(\d+):(\d+):(\d+)\]\s+NOTICE\[\d+\].+\'([\w/@\.\:\^]+)(?:-?\w+)?\'\s+is\s+now\s+(\w+)
     bool firstLine = true;
     while (!feof(f))
     {
@@ -183,8 +183,10 @@ void logDirectoryActivity(string filename)
             struct dirent *ent;
             while((ent = readdir(dir)) != NULL)
             {
-                char *foundAt = strstr(ent->d_name, "messages.");
-                if (foundAt)
+                // ищем файл пр шаблону "messages-xxxxxxxx",
+                // где "x" - цифра
+                char *foundAt = strstr(ent->d_name, "messages");
+                if (foundAt == ent->d_name)
                 {
                     // что то нашли
                     foundAt += 9;
@@ -293,9 +295,6 @@ void outgoingDoneDirectoryActivity(string filename)
 
 int main(int argc, char** argv)
 {
-
-    //FILE *f = ::fopen("/home/alexey/asterisk_log/test.txt", "r");
-
     /*
     string test = "HeLLo!";
     cout << test;
@@ -353,6 +352,7 @@ int main(int argc, char** argv)
 
 
     // ключик для дебага
+    if (argc > 6)
     {
         // если присутствует, то запускаем как обычную программу
         if (strcmp(argv[6], "-d") == 0)
@@ -413,7 +413,6 @@ int main(int argc, char** argv)
         return 0;
     }
     return 0;
-
 }
 
 
@@ -564,7 +563,7 @@ int monitorProc() {
                                             si->abonentsToNotify.push_back(n);
                                         }
                                         generateCallFiles();
-                                        sendResponse(socket, "Ok", id.c_str());
+                                        sendResponse(socket, "Ok", id.c_str(), "generateFiles");
                                     } else
                                     {
                                         sendResponse(socket, "EmptyRecepeterList", id.c_str());
@@ -578,6 +577,8 @@ int monitorProc() {
                                     idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
                                     idElement = body->InsertEndChild(outDoc.NewElement("Status"));
                                     idElement->InsertFirstChild(outDoc.NewText("Ok"));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Command"));
+                                    idElement->InsertEndChild(outDoc.NewText("queryResults"));
                                     idElement = body->InsertEndChild(outDoc.NewElement("Data"));
                                     idElement = idElement->InsertEndChild(outDoc.NewElement("RecipientList"));
 
@@ -634,6 +635,8 @@ int monitorProc() {
                                     idElement->InsertFirstChild(outDoc.NewText(id.c_str()));
                                     idElement = body->InsertEndChild(outDoc.NewElement("Status"));
                                     idElement->InsertFirstChild(outDoc.NewText("Ok"));
+                                    idElement = body->InsertEndChild(outDoc.NewElement("Command"));
+                                    idElement->InsertEndChild(outDoc.NewText("queryChanelsState"));
                                     idElement = body->InsertEndChild(outDoc.NewElement("Data"));
                                     idElement = idElement->InsertEndChild(outDoc.NewElement("RecipientList"));
                                     element = element->FirstChildElement("Data");
@@ -768,7 +771,7 @@ int monitorProc() {
     delete si;
 }
 
-void sendResponse (NL::Socket *socket, const string &status, const string &id)
+void sendResponse (NL::Socket *socket, const string &status, const string &id, const string &command)
 {
     XMLDocument outDoc;
     XMLNode *body = outDoc.InsertFirstChild(outDoc.NewElement("body"));
@@ -780,6 +783,11 @@ void sendResponse (NL::Socket *socket, const string &status, const string &id)
     }
     idElement = body->InsertEndChild(outDoc.NewElement("Status"));
     idElement->InsertFirstChild(outDoc.NewText(status.c_str()));
+    if (!command.empty())
+    {
+        idElement = body->InsertFirstChild(outDoc.NewElement("Command"));
+        idElement->InsertFirstChild(outDoc.NewText(command.c_str()));
+    }
     XMLPrinter printer;
     outDoc.Print(&printer);
     socket->send(printer.CStr(), printer.CStrSize() - 1);
@@ -829,6 +837,8 @@ void generateCallFiles()
                     fputs (line.c_str(), pFile);
                 }
                 fclose (pFile);
+                // TODO: добавить изменеие пользователя файла
+
                 string newFilePath = asteriskOutgoingPath + lit->filename;
                 if (rename(filePath.c_str(), newFilePath.c_str()) != 0)
                     allRemoved = false;
